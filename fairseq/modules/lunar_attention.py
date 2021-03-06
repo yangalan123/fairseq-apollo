@@ -450,6 +450,7 @@ class LunarCausalAttention(nn.Module):
         self.scaling = self.head_dim ** -0.5
 
         self.pq_proj = quant_noise(nn.Linear(embed_dim, embed_dim, bias=bias), q_noise, qn_block_size)
+        self.q_proj = quant_noise(nn.Linear(embed_dim, embed_dim, bias=bias), q_noise, qn_block_size)
         self.k_proj = quant_noise(nn.Linear(embed_dim, embed_dim, bias=bias), q_noise, qn_block_size)
         self.v_proj = quant_noise(nn.Linear(embed_dim, embed_dim, bias=bias), q_noise, qn_block_size)
         self.out_proj = quant_noise(nn.Linear(embed_dim, embed_dim, bias=bias), q_noise, qn_block_size)
@@ -473,6 +474,9 @@ class LunarCausalAttention(nn.Module):
         nn.init.xavier_uniform_(self.pq_proj.weight, gain=gain)
         if self.pq_proj.bias is not None:
             nn.init.constant_(self.pq_proj.bias, 0.)
+        nn.init.xavier_uniform_(self.q_proj.weight, gain=gain)
+        if self.q_proj.bias is not None:
+            nn.init.constant_(self.q_proj.bias, 0.)
         nn.init.xavier_uniform_(self.k_proj.weight, gain=gain)
         if self.k_proj.bias is not None:
             nn.init.constant_(self.k_proj.bias, 0.)
@@ -544,9 +548,9 @@ class LunarCausalAttention(nn.Module):
         # B*H x N x L
         pattn_weights = self._compute_pattention(pq, query, key_padding_mask)
 
+        q = self.q_proj(query) * self.scaling
         k = self.k_proj(query)
         v = self.v_proj(query)
-        q = query * self.scaling
 
         # B*H x N x K
         q = q.view(tgt_len, bsz * self.num_heads, self.head_dim).transpose(0, 1)
