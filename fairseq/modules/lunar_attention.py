@@ -491,7 +491,6 @@ class LunarCausalAttention(nn.Module):
     def _compute_pattention(self, pq, key, key_padding_mask):
         # N x B x D
         len, bsz, dim = key.size()
-        plen = pq.size(2)
         # N x B x D -> N x B*H x K
         k = key.contiguous().view(len, bsz * self.num_heads, self.head_dim)
         # N x B*H x K -> B*H x N x K
@@ -500,11 +499,6 @@ class LunarCausalAttention(nn.Module):
         pq = pq.view(bsz * self.num_heads, -1, self.head_dim).transpose(1, 2)
         # B*H x N x L
         pattn = k.bmm(pq)
-        if key_padding_mask is not None:
-            # don't attend to padding symbols
-            pattn = pattn.view(bsz, self.num_heads, len, plen)
-            pattn = pattn.masked_fill(key_padding_mask.unsqueeze(1).unsqueeze(3).to(torch.bool), float("-inf"))
-            pattn = pattn.view(bsz * self.num_heads, len, plen)
         return pattn
 
     def forward(
