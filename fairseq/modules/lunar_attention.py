@@ -491,6 +491,7 @@ class LunarCausalAttention(nn.Module):
     def _compute_pattention(self, pq, key, key_padding_mask):
         # N x B x D
         len, bsz, dim = key.size()
+        plen = pq.size(2)
         # N x B x D -> N x B*H x K
         k = key.contiguous().view(len, bsz * self.num_heads, self.head_dim)
         # N x B*H x K -> B*H x N x K
@@ -499,6 +500,11 @@ class LunarCausalAttention(nn.Module):
         pq = pq.view(bsz * self.num_heads, -1, self.head_dim).transpose(1, 2)
         # B*H x N x L
         pattn = k.bmm(pq)
+        if key_padding_mask is not None:
+            # don't attend to padding symbols
+            pattn = pattn.view(bsz, self.num_heads, len, plen)
+            pattn = pattn.masked_fill(key_padding_mask.unsqueeze(1).unsqueeze(3).to(torch.bool), float("-inf"))
+            pattn = pattn.view(bsz * self.num_heads, len, plen)
         return pattn
 
     def forward(
@@ -547,6 +553,7 @@ class LunarCausalAttention(nn.Module):
 
         # B*H x N x L
         pattn_weights = self._compute_pattention(pq, query, key_padding_mask)
+        key_padding_mask = None
 
         q = self.q_proj(query) * self.scaling
         k = self.k_proj(query)
@@ -600,7 +607,7 @@ class LunarCausalAttention(nn.Module):
         if key_padding_mask is not None and key_padding_mask.dim() == 0:
             key_padding_mask = None
 
-        if saved_state is not None:
+        if incremental_state is not None:
             attn_weights = incremental_causal_attention(q, k, pattn_weights, softmax=2)
         else:
             attn_weights = efficient_causal_attention(q, k, pattn_weights, softmax=2)
@@ -611,7 +618,7 @@ class LunarCausalAttention(nn.Module):
         attn_weights = attn_weights_float.type_as(attn_weights)
         attn_probs = self.dropout_module(attn_weights)
 
-        if saved_state is not None:
+        if incremental_state is not None:
             attn = incremental_causal_attention(attn_probs, pattn_weights, v, softmax=1)
         else:
             attn = efficient_causal_attention(attn_probs, pattn_weights, v, softmax=1)
@@ -744,10 +751,11 @@ def efficient_causal_attention(x, y, z, softmax=None):
     return:
     """
     assert softmax in [None, 1, 2]
+    assert x.size(1) == y.size(1) == z.size(1)
     n = x.size(1)
     rets = []
     for i in range(n):
-        xx = x[:, i].unsqueeze(1) # B x 1 x d1
+        xx = x[:, i:i + 1] # B x 1 x d1
         yy = y[:, :i] # B x i x d1
         zz = z[:, :i] # B x i x d2
         if softmax == 1:
