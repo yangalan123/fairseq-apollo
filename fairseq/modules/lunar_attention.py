@@ -178,7 +178,6 @@ class LunarMultiheadAttention(nn.Module):
 
         tgt_len, bsz, embed_dim = query.size()
         assert embed_dim == self.embed_dim
-        assert list(query.size()) == [tgt_len, bsz, embed_dim]
 
         assert not self.self_attention or incremental_state is None, \
             'For incremental self attention (causal attention), please use LunarCausalAttention'
@@ -527,7 +526,6 @@ class LunarCausalAttention(nn.Module):
         tgt_len, bsz, embed_dim = query.size()
         plen = pquery.size(0)
         assert embed_dim == self.embed_dim
-        assert list(query.size()) == [tgt_len, bsz, embed_dim]
 
         pq = None
         if incremental_state is not None:
@@ -750,8 +748,8 @@ def efficient_causal_attention(x, y, z, softmax=None):
     rets = []
     for i in range(n):
         xx = x[:, i:i + 1] # B x 1 x d1
-        yy = y[:, :i] # B x i x d1
-        zz = z[:, :i] # B x i x d2
+        yy = y[:, :i + 1] # B x i x d1
+        zz = z[:, :i + 1] # B x i x d2
         if softmax == 1:
             yy = F.softmax(yy, dim=1)
         elif softmax == 2:
