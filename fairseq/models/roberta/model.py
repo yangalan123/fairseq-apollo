@@ -371,7 +371,12 @@ class RobertaEncoder(FairseqEncoder):
             src_tokens,
             last_state_only=not return_all_hiddens,
         )
-        features = inner_states[-1].transpose(0, 1)  # T x B x C -> B x T x C
+
+        features = inner_states[-1]
+        if isinstance(features, tuple):
+            features = features[0]
+
+        features = features.transpose(0, 1)  # T x B x C -> B x T x C
         return features, {'inner_states': inner_states if return_all_hiddens else None}
 
     def output_layer(self, features, masked_tokens=None, **unused):

@@ -219,7 +219,7 @@ class LunaSentenceEncoder(nn.Module):
         num_segments: int = 0,
         use_position_embeddings: bool = True,
         offset_positions_by_padding: bool = True,
-        layernorm_embedding: bool = False,
+        layernorm_embedding: bool = True,
         normalize_before: bool = False,
         apply_bert_init: bool = False,
         activation_fn: str = "relu",
@@ -386,7 +386,7 @@ class LunaSentenceEncoder(nn.Module):
         segment_labels: torch.Tensor = None,
         last_state_only: bool = False,
         positions: Optional[torch.Tensor] = None,
-    ) -> Tuple[List[Tuple[torch.Tensor, torch.Tensor]], torch.Tensor, torch.Tensor]:
+    ) -> Tuple[List[Tuple[torch.Tensor, torch.Tensor]], Tuple[torch.Tensor, torch.Tensor]]:
 
         # compute padding mask. This is needed for multi-head attention
         padding_mask = tokens.eq(self.padding_idx)
@@ -448,7 +448,7 @@ class LunaSentenceEncoder(nn.Module):
         if last_state_only:
             inner_states = [(x, px)]
 
-        return inner_states, sentence_cls_rep, sentence_proj_rep
+        return inner_states, (sentence_cls_rep, sentence_proj_rep)
 
 
 def get_sinusoidal_positional_embedding(length, embed_dim):
