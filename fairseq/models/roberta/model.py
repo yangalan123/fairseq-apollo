@@ -22,6 +22,7 @@ from fairseq.models import (
 from fairseq.modules import (
     LayerNorm,
     TransformerSentenceEncoder,
+    LunaSentenceEncoder
 )
 from fairseq.modules.transformer_sentence_encoder import init_bert_params
 from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
@@ -98,6 +99,11 @@ class RobertaModel(FairseqEncoderModel):
                             help='scalar quantization noise and scalar quantization at training time')
         parser.add_argument('--untie-weights-roberta', action='store_true',
                             help='Untie weights between embeddings and classifiers in RoBERTa')
+        # args for Luna
+        parser.add_argument('--projected-length', type=int, default=256,
+                            help='Luna projected length')
+        parser.add_argument('--use-luna', type=int, default=1,
+                            help='use Luna sentence encoder')
 
     @classmethod
     def build_model(cls, args, task):
@@ -288,26 +294,47 @@ class RobertaEncoder(FairseqEncoder):
 
         if args.encoder_layers_to_keep:
             args.encoder_layers = len(args.encoder_layers_to_keep.split(","))
-
-        self.sentence_encoder = TransformerSentenceEncoder(
-            padding_idx=dictionary.pad(),
-            vocab_size=len(dictionary),
-            num_encoder_layers=args.encoder_layers,
-            embedding_dim=args.encoder_embed_dim,
-            ffn_embedding_dim=args.encoder_ffn_embed_dim,
-            num_attention_heads=args.encoder_attention_heads,
-            dropout=args.dropout,
-            attention_dropout=args.attention_dropout,
-            activation_dropout=args.activation_dropout,
-            layerdrop=args.encoder_layerdrop,
-            max_seq_len=args.max_positions,
-            num_segments=0,
-            encoder_normalize_before=True,
-            apply_bert_init=True,
-            activation_fn=args.activation_fn,
-            q_noise=args.quant_noise_pq,
-            qn_block_size=args.quant_noise_pq_block_size,
-        )
+        if args.use_luna == 1:
+            self.sentence_encoder = LunaSentenceEncoder(
+                padding_idx=dictionary.pad(),
+                vocab_size=len(dictionary),
+                projected_length=args.projected_length,
+                num_encoder_layers=args.encoder_layers,
+                embedding_dim=args.encoder_embed_dim,
+                ffn_embedding_dim=args.encoder_ffn_embed_dim,
+                num_attention_heads=args.encoder_attention_heads,
+                num_projected_attention_heads=args.encoder_attention_heads,
+                dropout=args.dropout,
+                attention_dropout=args.attention_dropout,
+                activation_dropout=args.activation_dropout,
+                layerdrop=args.encoder_layerdrop,
+                max_seq_len=args.max_positions,
+                num_segments=0,
+                apply_bert_init=True,
+                activation_fn=args.activation_fn,
+                q_noise=args.quant_noise_pq,
+                qn_block_size=args.quant_noise_pq_block_size,
+            )
+        else:
+            self.sentence_encoder = TransformerSentenceEncoder(
+                padding_idx=dictionary.pad(),
+                vocab_size=len(dictionary),
+                num_encoder_layers=args.encoder_layers,
+                embedding_dim=args.encoder_embed_dim,
+                ffn_embedding_dim=args.encoder_ffn_embed_dim,
+                num_attention_heads=args.encoder_attention_heads,
+                dropout=args.dropout,
+                attention_dropout=args.attention_dropout,
+                activation_dropout=args.activation_dropout,
+                layerdrop=args.encoder_layerdrop,
+                max_seq_len=args.max_positions,
+                num_segments=0,
+                encoder_normalize_before=True,
+                apply_bert_init=True,
+                activation_fn=args.activation_fn,
+                q_noise=args.quant_noise_pq,
+                qn_block_size=args.quant_noise_pq_block_size,
+            )
         args.untie_weights_roberta = getattr(args, 'untie_weights_roberta', False)
 
         self.lm_head = RobertaLMHead(

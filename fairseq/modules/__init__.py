@@ -26,6 +26,7 @@ from .linearized_convolution import LinearizedConvolution
 from .multihead_attention import MultiheadAttention
 from .linear_multihead_attention import LinearMultiheadAttention
 from .lunar_attention import LunarMultiheadAttention, LunarCausalAttention
+from .luna_sentence_encoder import LunaSentenceEncoder
 from .positional_embedding import PositionalEmbedding
 from .same_pad import SamePad
 from .scalar_bias import ScalarBias
