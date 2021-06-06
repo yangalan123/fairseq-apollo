@@ -166,7 +166,7 @@ class LunaDecoderLayer(nn.Module):
             (default: False).
     """
 
-    def __init__(self, args, index, lunar_cross_attn, lunar_causal_attn):
+    def __init__(self, args, index, lunar_causal_attn, lunar_cross_attn):
         super().__init__()
         self.quant_noise = getattr(args, "quant_noise_pq", 0)
         self.quant_noise_block_size = getattr(args, "quant_noise_pq_block_size", 8)
