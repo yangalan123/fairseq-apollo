@@ -309,10 +309,9 @@ class LunaEncoder(FairseqEncoder):
 
         if args.layernorm_embedding:
             self.layernorm_embedding = LayerNorm(embed_dim)
-            self.layernorm_porjected_embedding = LayerNorm(embed_dim)
         else:
             self.layernorm_embedding = None
-            self.layernorm_porjected_embedding = None
+        self.layernorm_porjected_embedding = LayerNorm(embed_dim)
 
         self.proj_len = args.encoder_projected_length
         self.dynamic_projection = not args.encoder_fixed_projection
@@ -349,8 +348,7 @@ class LunaEncoder(FairseqEncoder):
         px = proj_embed = self.embed_scale * self.projected_embeddings[:max_len]
         if self.projected_positions is not None:
             px = px + self.projected_positions[:max_len]
-        if self.layernorm_porjected_embedding is not None:
-            px = self.layernorm_porjected_embedding(px)
+        px = self.layernorm_porjected_embedding(px)
 
         return px, proj_embed
 
