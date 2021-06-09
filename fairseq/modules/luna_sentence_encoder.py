@@ -60,7 +60,7 @@ class LunaSentenceEncoderLayer(nn.Module):
 
         # layer norm associated with the self attention layer
         self.self_attn_layer_norm = LayerNorm(self.embedding_dim, export=export)
-        self.self_atten_proj_layer_norm = LayerNorm(self.embed_dim, export=export)
+        self.self_atten_proj_layer_norm = LayerNorm(self.embedding_dim, export=export)
 
         self.fc1 = self.build_fc1(self.embedding_dim, ffn_embedding_dim, q_noise=q_noise, qn_block_size=qn_block_size)
         self.fc2 = self.build_fc2(ffn_embedding_dim, self.embedding_dim, q_noise=q_noise, qn_block_size=qn_block_size)
@@ -205,10 +205,13 @@ class LunaSentenceEncoder(nn.Module):
         embed_scale: float = None,
         freeze_embeddings: bool = False,
         n_trans_layers_to_freeze: int = 0,
+        tie_layer_weights: bool = False,
         export: bool = False,
         traceable: bool = False,
         q_noise: float = 0.0,
         qn_block_size: int = 8,
+        sen_rep_type: str = 'cls',
+        no_scale_embedding: bool = False,
     ) -> None:
 
         super().__init__()
@@ -225,9 +228,13 @@ class LunaSentenceEncoder(nn.Module):
         self.learned_pos_embedding = learned_pos_embedding
         self.traceable = traceable
         self.tpu = False  # whether we're on TPU
+        self.tie_layer_weights = tie_layer_weights
+        self.sen_rep_type = sen_rep_type
 
         self.embed_tokens = self.build_embedding(self.vocab_size, self.embedding_dim, self.padding_idx)
         self.embed_scale = embed_scale
+
+        self.embed_scale = 1.0 if no_scale_embedding else math.sqrt(self.embedding_dim)
 
         if q_noise > 0:
             self.quant_noise = apply_quant_noise_(nn.Linear(self.embedding_dim, self.embedding_dim, bias=False), q_noise, qn_block_size)
@@ -265,23 +272,41 @@ class LunaSentenceEncoder(nn.Module):
             self.layers = LayerDropModuleList(p=self.layerdrop)
         else:
             self.layers = nn.ModuleList([])
-
-        self.layers.extend([
-            self.build_luna_sentence_encoder_layer(
-                embedding_dim=self.embedding_dim,
-                ffn_embedding_dim=ffn_embedding_dim,
-                num_attention_heads=num_attention_heads,
-                num_projected_attention_heads=num_projected_attention_heads,
-                dropout=self.dropout_module.p,
-                attention_dropout=attention_dropout,
-                activation_dropout=activation_dropout,
-                activation_fn=activation_fn,
-                export=export,
-                q_noise=q_noise,
-                qn_block_size=qn_block_size,
-            )
-            for _ in range(num_encoder_layers)
-        ])
+        self.num_layers = num_encoder_layers
+        if self.tie_layer_weights:
+            self.layers.extend([
+                self.build_luna_sentence_encoder_layer(
+                    embedding_dim=self.embedding_dim,
+                    ffn_embedding_dim=ffn_embedding_dim,
+                    num_attention_heads=num_attention_heads,
+                    num_projected_attention_heads=num_projected_attention_heads,
+                    dropout=self.dropout_module.p,
+                    attention_dropout=attention_dropout,
+                    activation_dropout=activation_dropout,
+                    activation_fn=activation_fn,
+                    export=export,
+                    q_noise=q_noise,
+                    qn_block_size=qn_block_size,
+                )
+                for _ in range(1)
+            ])
+        else:
+            self.layers.extend([
+                self.build_luna_sentence_encoder_layer(
+                    embedding_dim=self.embedding_dim,
+                    ffn_embedding_dim=ffn_embedding_dim,
+                    num_attention_heads=num_attention_heads,
+                    num_projected_attention_heads=num_projected_attention_heads,
+                    dropout=self.dropout_module.p,
+                    attention_dropout=attention_dropout,
+                    activation_dropout=activation_dropout,
+                    activation_fn=activation_fn,
+                    export=export,
+                    q_noise=q_noise,
+                    qn_block_size=qn_block_size,
+                )
+                for _ in range(num_encoder_layers)
+            ])
 
         if layernorm_embedding:
             self.emb_layer_norm = LayerNorm(self.embedding_dim, export=export)
@@ -363,8 +388,8 @@ class LunaSentenceEncoder(nn.Module):
         px = self.projected_embeddings
 
         if self.embed_scale is not None:
-            x *= self.embed_scale
-            px *= self.embed_scale
+            x = x * self.embed_scale
+            px = px * self.embed_scale
 
         if self.embed_positions is not None:
             x += self.embed_positions(tokens, positions=positions)
@@ -398,13 +423,24 @@ class LunaSentenceEncoder(nn.Module):
         inner_states = []
         if not last_state_only:
             inner_states.append((x, px))
-
-        for layer in self.layers:
-            x, px, _ = layer(x, px, self_attn_padding_mask=padding_mask)
+        
+        for i in range(self.num_layers):
+            if self.tie_layer_weights:
+                x, px, _ = self.layers[0](x, px, self_attn_padding_mask=padding_mask)
+            else:
+                x, px, _ = self.layers[i](x, px, self_attn_padding_mask=padding_mask)
             if not last_state_only:
                 inner_states.append((x, px))
 
-        sentence_cls_rep = x[0, :, :]
+        # for layer in self.layers:
+        #     x, px, _ = layer(x, px, self_attn_padding_mask=padding_mask)
+        #     if not last_state_only:
+        #         inner_states.append((x, px))
+
+        if self.sen_rep_type == 'cls':
+            sentence_cls_rep = x[0, :, :]
+        elif self.sen_rep_type == 'mp':
+            sentence_cls_rep = x.mean(dim=0)
         sentence_proj_rep = px
 
         if last_state_only:

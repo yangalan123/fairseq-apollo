@@ -11,8 +11,9 @@ import torch.nn as nn
 from fairseq import utils
 from fairseq.modules import (
     LayerNorm,
-    MultiheadAttention,
+    MultiheadAttention
 )
+from fairseq.modules.multihead_linear_attention import MultiheadLinearAttention
 from fairseq.modules.quant_noise import quant_noise
 from fairseq.modules.fairseq_dropout import FairseqDropout
 
@@ -37,6 +38,7 @@ class TransformerSentenceEncoderLayer(nn.Module):
         q_noise: float = 0.0,
         qn_block_size: int = 8,
         init_fn: Callable = None,
+        normalize_before: bool = False
     ) -> None:
         super().__init__()
 
@@ -47,6 +49,7 @@ class TransformerSentenceEncoderLayer(nn.Module):
         self.embedding_dim = embedding_dim
         self.dropout_module = FairseqDropout(dropout, module_name=self.__class__.__name__)
         self.activation_dropout_module = FairseqDropout(activation_dropout, module_name=self.__class__.__name__)
+        self.normalize_before = normalize_before
 
         # Initialize blocks
         self.activation_fn = utils.get_activation_fn(activation_fn)
@@ -58,6 +61,7 @@ class TransformerSentenceEncoderLayer(nn.Module):
             q_noise=q_noise,
             qn_block_size=qn_block_size,
         )
+        # self.self_attn = self.build_informer_attention(self.embedding_dim)
 
         # layer norm associated with the self attention layer
         self.self_attn_layer_norm = LayerNorm(self.embedding_dim, export=export)
@@ -105,6 +109,25 @@ class TransformerSentenceEncoderLayer(nn.Module):
             q_noise=q_noise,
             qn_block_size=qn_block_size,
         )
+    
+    def build_informer_attention(
+        self,
+        embed_dim,
+        ):
+        max_length = 1000
+        return MultiheadLinearAttention(
+            embed_dim,
+            4,
+            dropout=0.1,
+            self_attention=True,
+            q_noise=0,
+            qn_block_size=8,
+            compressed=max_length//250,
+            max_seq_len=max_length,
+            shared_kv_compressed=1,
+            shared_compress_layer=None,
+            freeze_compress=0,
+        )
 
     def forward(
         self,
@@ -117,6 +140,8 @@ class TransformerSentenceEncoderLayer(nn.Module):
         modules similar to the original Transformer implementation.
         """
         residual = x
+        if self.normalize_before:
+            x = self.self_attn_layer_norm(x)
         x, attn = self.self_attn(
             query=x,
             key=x,
@@ -127,13 +152,18 @@ class TransformerSentenceEncoderLayer(nn.Module):
         )
         x = self.dropout_module(x)
         x = residual + x
-        x = self.self_attn_layer_norm(x)
-
+        # x = self.self_attn_layer_norm(x)
+        if not self.normalize_before:
+            x = self.self_attn_layer_norm(x)
         residual = x
+        if self.normalize_before:
+            x = self.final_layer_norm(x)
         x = self.activation_fn(self.fc1(x))
         x = self.activation_dropout_module(x)
         x = self.fc2(x)
         x = self.dropout_module(x)
         x = residual + x
-        x = self.final_layer_norm(x)
+        # x = self.final_layer_norm(x)
+        if not self.normalize_before:
+            x = self.final_layer_norm(x)
         return x, attn

@@ -95,11 +95,15 @@ class TransformerSentenceEncoder(nn.Module):
         n_trans_layers_to_freeze: int = 0,
         export: bool = False,
         traceable: bool = False,
+        tie_layer_weights: bool = False,
         q_noise: float = 0.0,
         qn_block_size: int = 8,
+        normalize_before: bool = False,
+        sen_rep_type: str = 'cls'
     ) -> None:
 
         super().__init__()
+        self.sen_rep_type = sen_rep_type
         self.padding_idx = padding_idx
         self.vocab_size = vocab_size
         self.dropout_module = FairseqDropout(dropout, module_name=self.__class__.__name__)
@@ -112,6 +116,8 @@ class TransformerSentenceEncoder(nn.Module):
         self.learned_pos_embedding = learned_pos_embedding
         self.traceable = traceable
         self.tpu = False  # whether we're on TPU
+        self.tie_layer_weights = tie_layer_weights
+        self.normalize_before = normalize_before
 
         self.embed_tokens = self.build_embedding(
             self.vocab_size, self.embedding_dim, self.padding_idx
@@ -148,6 +154,11 @@ class TransformerSentenceEncoder(nn.Module):
             self.layers = LayerDropModuleList(p=self.layerdrop)
         else:
             self.layers = nn.ModuleList([])
+        self.num_layers = num_encoder_layers
+        if self.tie_layer_weights:
+            real_num_layers = 1
+        else:
+            real_num_layers = num_encoder_layers
         self.layers.extend([
             self.build_transformer_sentence_encoder_layer(
                 embedding_dim=self.embedding_dim,
@@ -160,8 +171,9 @@ class TransformerSentenceEncoder(nn.Module):
                 export=export,
                 q_noise=q_noise,
                 qn_block_size=qn_block_size,
+                normalize_before=self.normalize_before
             )
-            for _ in range(num_encoder_layers)
+            for _ in range(real_num_layers)
         ])
 
         if encoder_normalize_before:
@@ -202,6 +214,7 @@ class TransformerSentenceEncoder(nn.Module):
         export,
         q_noise,
         qn_block_size,
+        normalize_before,
     ):
         return TransformerSentenceEncoderLayer(
             embedding_dim=embedding_dim,
@@ -214,6 +227,7 @@ class TransformerSentenceEncoder(nn.Module):
             export=export,
             q_noise=q_noise,
             qn_block_size=qn_block_size,
+            normalize_before=normalize_before
         )
 
     def prepare_for_tpu_(self, **kwargs):
@@ -245,7 +259,7 @@ class TransformerSentenceEncoder(nn.Module):
 
         if self.quant_noise is not None:
             x = self.quant_noise(x)
-
+        # assert self.emb_layer_norm is None
         if self.emb_layer_norm is not None:
             x = self.emb_layer_norm(x)
 
@@ -262,12 +276,23 @@ class TransformerSentenceEncoder(nn.Module):
         if not last_state_only:
             inner_states.append(x)
 
-        for layer in self.layers:
-            x, _ = layer(x, self_attn_padding_mask=padding_mask)
+        
+        for i in range(self.num_layers):
+            if self.tie_layer_weights:
+                j = 0
+            else:
+                j = i
+            x, _ = self.layers[j](x, self_attn_padding_mask=padding_mask)
             if not last_state_only:
                 inner_states.append(x)
-
-        sentence_rep = x[0, :, :]
+        # for layer in self.layers:
+        #     x, _ = layer(x, self_attn_padding_mask=padding_mask)
+        #     if not last_state_only:
+        #         inner_states.append(x)
+        if self.sen_rep_type == 'mp':
+            sentence_rep = x.mean(dim=0)
+        else:
+            sentence_rep = x[0, :, :]
 
         if last_state_only:
             inner_states = [x]
