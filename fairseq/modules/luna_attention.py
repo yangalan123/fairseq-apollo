@@ -91,7 +91,8 @@ class LunarMultiheadAttention(nn.Module):
     def _compute_pcontext_singlehead(self, pquery, context, context_padding_mask):
         c = self.c_proj(context)
         # N x B x D -> B x D x N
-        k = c.permute(1, 2, 0)
+        # k = c.permute(1, 2, 0)
+        k = context.permute(1, 2, 0)
         # N x B x D -> B x N x D
         v = c.transpose(0, 1)
 
@@ -112,7 +113,9 @@ class LunarMultiheadAttention(nn.Module):
         len, bsz, dim = context.size()
         c = self.c_proj(context)
         # N x B x D -> N x B x H x K
-        k = v = c.view(len, bsz, self.num_pheads, self.phead_dim)
+        # k = v = c.view(len, bsz, self.num_pheads, self.phead_dim)
+        k = context.view(len, bsz, self.num_pheads, self.phead_dim)
+        v = c.view(len, bsz, self.num_pheads, self.phead_dim)
         # N x B x H x K -> B x H x K x N
         k = k.permute(1, 2, 3, 0)
         # N x B x H x K -> B x H x N x K
