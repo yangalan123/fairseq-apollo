@@ -212,7 +212,9 @@ class LunarMultiheadAttention(nn.Module):
             assert context is None
             k = v = None
         else:
-            k = v = self.pc_proj(pcontext).view(-1, bsz * self.num_heads, self.head_dim).transpose(0, 1)
+            # k = v = self.pc_proj(pcontext).view(-1, bsz * self.num_heads, self.head_dim).transpose(0, 1)
+            k = pcontext.view(-1, bsz * self.num_heads, self.head_dim).transpose(0, 1)
+            v = self.pc_proj(pcontext).view(-1, bsz * self.num_heads, self.head_dim).transpose(0, 1)
 
         q = q * self.scaling
         q = q.contiguous().view(tgt_len, bsz * self.num_heads, self.head_dim).transpose(0, 1)
