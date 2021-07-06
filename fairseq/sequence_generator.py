@@ -640,6 +640,8 @@ class SequenceGenerator(nn.Module):
             for bbsz_idx in range(bsz * beam_size)
         ]
         cpu_tokens = tokens.cpu()
+        #print(type(lprobs))
+        #print(lprobs)
         for bbsz_idx in range(bsz * beam_size):
             gen_tokens: List[int] = cpu_tokens[bbsz_idx].tolist()
             for ngram in self.transpose_list(
@@ -662,10 +664,14 @@ class SequenceGenerator(nn.Module):
             banned_tokens = [
                 torch.jit.annotate(List[int], []) for bbsz_idx in range(bsz * beam_size)
             ]
+        #print(lprobs)
         for bbsz_idx in range(bsz * beam_size):
+            #print(torch.tensor(banned_tokens[bbsz_idx]).long())
+            #print(lprobs[bbsz_idx])
+            #print(lprobs[bbsz_idx][torch.tensor(banned_tokens[bbsz_idx]).long()])
             lprobs[bbsz_idx][
                 torch.tensor(banned_tokens[bbsz_idx]).long()
-            ] = torch.tensor(-math.inf, dtype=torch.float)
+            ] = torch.tensor(-math.inf, dtype=torch.float).to(lprobs.device)
         return lprobs
 
 

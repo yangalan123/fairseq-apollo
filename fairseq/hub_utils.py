@@ -158,6 +158,12 @@ class GeneratorHubInterface(nn.Module):
         results = []
         for batch in self._build_batches(tokenized_sentences, skip_invalid_size_inputs):
             batch = utils.apply_to_sample(lambda t: t.to(self.device), batch)
+            #print(type(batch))
+            #print(batch)
+            #print(len(self.models))
+            #print(type(self.models[0]))
+            #print(isinstance(self.models[0], nn.Module))
+            self.models[0].cuda()
             translations = self.task.inference_step(
                 generator, self.models, batch, **inference_step_args
             )

@@ -17,6 +17,7 @@ from fairseq.models import (
     register_model,
     register_model_architecture,
 )
+from fairseq.models.bart.hub_interface import BARTHubInterface
 from fairseq.modules import (
     AdaptiveSoftmax,
     FairseqDropout,
@@ -158,6 +159,26 @@ class LunaModel(FairseqEncoderDecoderModel):
         parser.add_argument('--quant-noise-scalar', type=float, metavar='D', default=0,
                             help='scalar quantization noise and scalar quantization at training time')
         # fmt: on
+    @classmethod
+    def from_pretrained(
+        cls,
+        model_name_or_path,
+        checkpoint_file='model.pt',
+        data_name_or_path='.',
+        bpe='gpt2',
+        **kwargs,
+    ):
+        from fairseq import hub_utils
+        x = hub_utils.from_pretrained(
+            model_name_or_path,
+            checkpoint_file,
+            data_name_or_path,
+            archive_map=cls.hub_models(),
+            bpe=bpe,
+            load_checkpoint_heads=True,
+            **kwargs,
+        )
+        return BARTHubInterface(x['args'], x['task'], x['models'][0])
 
     @classmethod
     def build_model(cls, args, task):
